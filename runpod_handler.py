@@ -113,13 +113,14 @@ def generate_video(job_input: Dict[str, Any]) -> Dict[str, Any]:
 
         output_path = f"{OUTPUT_STORAGE_PATH}/{job_id}.mp4"
 
-        # Default parameters optimized for speed
+        # Default parameters optimized for speed and quality
         size = job_input.get("size", "infinitetalk-480")
         frame_num = job_input.get("frame_num", 81)
         max_frame_num = job_input.get("max_frame_num", 1000)
         sample_steps = job_input.get("sample_steps", 8)  # 8 steps for 5x faster generation
         sample_shift = job_input.get("sample_shift", 7 if size == "infinitetalk-480" else 11)
-        cfg_scale = job_input.get("cfg_scale", 1.1)
+        audio_cfg_scale = job_input.get("audio_cfg_scale", 4.0)  # 3-5 optimal for lip sync
+        text_cfg_scale = job_input.get("text_cfg_scale", 5.0)  # Text guidance scale
         seed = job_input.get("seed", -1)
 
         # Create input JSON for InfiniteTalk
@@ -156,7 +157,8 @@ def generate_video(job_input: Dict[str, Any]) -> Dict[str, Any]:
             "--max_frame_num", str(max_frame_num),
             "--sample_steps", str(sample_steps),
             "--sample_shift", str(sample_shift),
-            "--sample_audio_guide_scale", str(cfg_scale),
+            "--sample_audio_guide_scale", str(audio_cfg_scale),  # Audio CFG for lip sync
+            "--sample_text_guide_scale", str(text_cfg_scale),   # Text CFG
             "--base_seed", str(seed)
         ]
 
