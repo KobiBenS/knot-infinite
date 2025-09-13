@@ -14,13 +14,26 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-JOB_STORAGE_PATH = "/runpod-volume/jobs"
-OUTPUT_STORAGE_PATH = "/runpod-volume/outputs"
+# Models are baked into image, outputs go to volume or /tmp
+MODEL_DIR = "/workspace/models"
+
+# Use volume if available, otherwise use /tmp
+if os.path.exists("/runpod-volume"):
+    JOB_STORAGE_PATH = "/runpod-volume/jobs"
+    OUTPUT_STORAGE_PATH = "/runpod-volume/outputs"
+    logger.info("Using RunPod volume for storage")
+else:
+    JOB_STORAGE_PATH = "/tmp/jobs"
+    OUTPUT_STORAGE_PATH = "/tmp/outputs"
+    logger.info("No volume detected, using /tmp (outputs won't persist)")
 
 os.makedirs(JOB_STORAGE_PATH, exist_ok=True)
 os.makedirs(OUTPUT_STORAGE_PATH, exist_ok=True)
 
 jobs_status = {}
+
+# Global model state
+model_loaded = False
 
 s3_client = None
 if os.environ.get("BUCKET_ENDPOINT_URL"):
@@ -34,17 +47,28 @@ if os.environ.get("BUCKET_ENDPOINT_URL"):
     BUCKET_NAME = os.environ.get("BUCKET_NAME", "infinitetalk-outputs")
 
 def load_models():
-    """Initialize InfiniteTalk models"""
+    """Initialize InfiniteTalk models - models are already in image"""
     global model_loaded
-    model_loaded = False
+
+    if model_loaded:
+        return
 
     try:
         import sys
         sys.path.append('/workspace/InfiniteTalk')
 
-        logger.info("Loading InfiniteTalk models...")
+        logger.info("Loading InfiniteTalk models from image...")
+        logger.info(f"Model directory: {MODEL_DIR}")
+
+        # Verify models exist
+        wav2vec_path = f"{MODEL_DIR}/wav2vec2/wav2vec2-base"
+        if os.path.exists(wav2vec_path):
+            logger.info(f"✓ Wav2Vec2 model found at {wav2vec_path}")
+        else:
+            logger.warning(f"⚠ Wav2Vec2 model not found at {wav2vec_path}")
+
         model_loaded = True
-        logger.info("Models loaded successfully")
+        logger.info("Models loaded successfully from image")
     except Exception as e:
         logger.error(f"Failed to load models: {e}")
         raise
@@ -71,9 +95,17 @@ def generate_video(job_input: Dict[str, Any]) -> Dict[str, Any]:
                 ], check=True)
 
             if job_input.get("image_url"):
-                image_path = f"/tmp/{job_id}_image.jpg"
+                url = job_input["image_url"]
+                # Keep original extension to determine type
+                ext = url.split('.')[-1].lower()
+                if ext in ['mp4', 'avi', 'mov', 'webm']:
+                    image_path = f"/tmp/{job_id}_input.{ext}"
+                else:
+                    image_path = f"/tmp/{job_id}_input.jpg"
+
+                # Download the file
                 subprocess.run([
-                    "wget", "-O", image_path, job_input["image_url"]
+                    "wget", "-O", image_path, url
                 ], check=True)
 
         if not audio_path or not image_path:
@@ -89,20 +121,41 @@ def generate_video(job_input: Dict[str, Any]) -> Dict[str, Any]:
         cfg_scale = job_input.get("cfg_scale", 1.1)
         seed = job_input.get("seed", -1)
 
+        # Create input JSON for InfiniteTalk
+        input_json = {
+            "prompt": job_input.get("prompt", "A person is talking"),
+            "cond_audio": {
+                "person1": audio_path
+            }
+        }
+
+        # Determine if input is image or video
+        if image_path.lower().endswith(('.mp4', '.avi', '.mov', '.webm')):
+            input_json["cond_video"] = image_path
+            logger.info(f"Using video input: {image_path}")
+        else:
+            input_json["cond_image"] = image_path
+            logger.info(f"Using image input: {image_path}")
+
+        # Save input JSON
+        input_json_path = f"/tmp/{job_id}_input.json"
+        with open(input_json_path, 'w') as f:
+            import json
+            json.dump(input_json, f)
+
         cmd = [
             "python", "/workspace/InfiniteTalk/generate_infinitetalk.py",
             "--task", "infinitetalk-14B",
-            "--ckpt_dir", "/runpod-volume/models/wan",
-            "--infinitetalk_dir", "/runpod-volume/models/infinitetalk",
-            "--audio_path", audio_path,
-            "--image_path", image_path,
-            "--save_path", output_path,
+            "--ckpt_dir", f"{MODEL_DIR}/wan",
+            "--infinitetalk_dir", f"{MODEL_DIR}/infinitetalk",
+            "--input_json", input_json_path,
+            "--save_file", output_path.replace('.mp4', ''),  # InfiniteTalk adds .mp4
             "--size", size,
             "--frame_num", str(frame_num),
             "--max_frame_num", str(max_frame_num),
             "--sample_steps", str(sample_steps),
             "--sample_shift", str(sample_shift),
-            "--cfg_scale", str(cfg_scale),
+            "--sample_audio_guide_scale", str(cfg_scale),
             "--base_seed", str(seed)
         ]
 

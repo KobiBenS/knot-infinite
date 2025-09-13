@@ -36,8 +36,8 @@ RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
     ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
     ln -sf /usr/bin/pip3 /usr/bin/pip
 
-# Upgrade pip
-RUN pip install --upgrade pip setuptools wheel
+# Upgrade pip (root is fine in Docker)
+RUN pip install --upgrade --root-user-action=ignore pip setuptools wheel
 
 # Install PyTorch with CUDA 12.4 support (compatible with CUDA 12.8)
 RUN pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
