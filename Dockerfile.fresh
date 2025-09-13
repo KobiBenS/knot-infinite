@@ -1,0 +1,248 @@
+# Fresh build - InfiniteTalk RunPod v2.0
+FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04
+
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+
+WORKDIR /workspace
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    wget \
+    git \
+    git-lfs \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    libglib2.0-0 \
+    libxrender-dev \
+    libgomp1 \
+    libgl1-mesa-glx \
+    sox \
+    libsox-dev \
+    libsox-fmt-all \
+    libsndfile1 \
+    build-essential \
+    ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symlinks for python
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
+    ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
+
+# Upgrade pip
+RUN pip install --upgrade pip setuptools wheel
+
+# Install PyTorch with native CUDA 12.8 support
+RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+
+# Install RunPod
+RUN pip install runpod boto3 botocore
+
+# Clone InfiniteTalk repository
+RUN git clone https://github.com/MeiGen-AI/InfiniteTalk.git /workspace/InfiniteTalk
+
+# Install InfiniteTalk requirements
+WORKDIR /workspace/InfiniteTalk
+RUN pip install -r requirements.txt
+
+# Install xformers for CUDA 12.x
+RUN pip install xformers --index-url https://download.pytorch.org/whl/cu128
+
+# Install ParaAttention
+RUN pip install git+https://github.com/chengzeyi/ParaAttention.git
+
+# Create model directories
+RUN mkdir -p /workspace/models/wan && \
+    mkdir -p /workspace/models/infinitetalk && \
+    mkdir -p /workspace/models/wav2vec2
+
+# Download Wav2Vec2 model
+RUN git lfs install && \
+    git clone https://huggingface.co/facebook/wav2vec2-base /workspace/models/wav2vec2/wav2vec2-base || \
+    echo "Warning: Wav2Vec2 download failed"
+
+# Create fresh handler script
+RUN cat > /workspace/runpod_handler.py << 'EOF'
+# InfiniteTalk RunPod Handler v2.0 - Fresh Build
+import os
+import json
+import uuid
+import time
+import subprocess
+from pathlib import Path
+import runpod
+from typing import Dict, Any
+import boto3
+from botocore.client import Config
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Global variables
+MODEL_DIR = "/workspace/models"
+OUTPUT_DIR = "/tmp/outputs"
+model_loaded = False
+jobs_status = {}
+
+# Create directories
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs("/tmp/jobs", exist_ok=True)
+
+# S3 setup
+s3_client = None
+if os.environ.get("BUCKET_ENDPOINT_URL"):
+    try:
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=os.environ.get("BUCKET_ENDPOINT_URL"),
+            aws_access_key_id=os.environ.get("BUCKET_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.environ.get("BUCKET_SECRET_ACCESS_KEY"),
+            config=Config(signature_version='s3v4')
+        )
+        BUCKET_NAME = os.environ.get("BUCKET_NAME", "infinitetalk-outputs")
+        logger.info(f"S3 configured: {BUCKET_NAME}")
+    except Exception as e:
+        logger.error(f"S3 setup failed: {e}")
+
+def generate_video(job_input: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate video using InfiniteTalk"""
+    job_id = str(uuid.uuid4())
+
+    try:
+        # Get inputs
+        audio_url = job_input.get("audio_url")
+        image_url = job_input.get("image_url")
+
+        if not audio_url or not image_url:
+            return {"error": "audio_url and image_url are required"}
+
+        # Download files
+        audio_path = f"/tmp/{job_id}_audio.wav"
+        subprocess.run(["wget", "-O", audio_path, audio_url], check=True)
+
+        # Download image/video
+        ext = image_url.split('.')[-1].lower()
+        if ext in ['mp4', 'avi', 'mov', 'webm']:
+            media_path = f"/tmp/{job_id}_input.{ext}"
+        else:
+            media_path = f"/tmp/{job_id}_input.jpg"
+        subprocess.run(["wget", "-O", media_path, image_url], check=True)
+
+        # Parameters
+        size = job_input.get("size", "infinitetalk-480")
+        frame_num = job_input.get("frame_num", 81)
+        sample_steps = job_input.get("sample_steps", 8)
+        audio_cfg = job_input.get("audio_cfg_scale", 4.0)
+        text_cfg = job_input.get("text_cfg_scale", 5.0)
+        seed = job_input.get("seed", -1)
+
+        # Create input JSON
+        input_json = {
+            "prompt": job_input.get("prompt", "A person is talking"),
+            "cond_audio": {"person1": audio_path}
+        }
+
+        if media_path.endswith(('.mp4', '.avi', '.mov', '.webm')):
+            input_json["cond_video"] = media_path
+        else:
+            input_json["cond_image"] = media_path
+
+        input_json_path = f"/tmp/{job_id}_input.json"
+        with open(input_json_path, 'w') as f:
+            json.dump(input_json, f)
+
+        output_path = f"{OUTPUT_DIR}/{job_id}"
+
+        # Run generation
+        cmd = [
+            "python", "/workspace/InfiniteTalk/generate_infinitetalk.py",
+            "--task", "infinitetalk-14B",
+            "--ckpt_dir", f"{MODEL_DIR}/wan",
+            "--infinitetalk_dir", f"{MODEL_DIR}/infinitetalk",
+            "--input_json", input_json_path,
+            "--save_file", output_path,
+            "--size", size,
+            "--frame_num", str(frame_num),
+            "--sample_steps", str(sample_steps),
+            "--sample_audio_guide_scale", str(audio_cfg),
+            "--sample_text_guide_scale", str(text_cfg),
+            "--base_seed", str(seed)
+        ]
+
+        logger.info(f"Running: {' '.join(cmd)}")
+        process = subprocess.run(cmd, capture_output=True, text=True, cwd="/workspace/InfiniteTalk")
+
+        if process.returncode != 0:
+            raise RuntimeError(f"Generation failed: {process.stderr}")
+
+        # Upload to S3 if configured
+        output_file = f"{output_path}.mp4"
+        presigned_url = None
+
+        if s3_client and os.path.exists(output_file):
+            try:
+                s3_key = f"outputs/{job_id}.mp4"
+                s3_client.upload_file(output_file, BUCKET_NAME, s3_key)
+                presigned_url = s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': BUCKET_NAME, 'Key': s3_key},
+                    ExpiresIn=3600 * 24
+                )
+            except Exception as e:
+                logger.error(f"S3 upload failed: {e}")
+
+        return {
+            "job_id": job_id,
+            "status": "completed",
+            "output_path": output_file,
+            "presigned_url": presigned_url
+        }
+
+    except Exception as e:
+        logger.error(f"Generation failed: {e}")
+        return {"error": str(e)}
+
+def handler(job):
+    """Main handler"""
+    job_input = job["input"]
+    action = job_input.get("action", "generate")
+
+    if action == "generate":
+        return generate_video(job_input)
+    else:
+        return {"error": f"Unknown action: {action}"}
+
+if __name__ == "__main__":
+    logger.info("Starting InfiniteTalk RunPod Handler v2.0")
+    runpod.serverless.start({"handler": handler})
+EOF
+
+# Create simple entrypoint
+RUN cat > /workspace/entrypoint.sh << 'EOF'
+#!/bin/bash
+echo "InfiniteTalk RunPod v2.0 Starting..."
+echo "Models at: /workspace/models"
+echo "Outputs to: /tmp/outputs"
+cd /workspace
+python -u runpod_handler.py
+EOF
+
+RUN chmod +x /workspace/entrypoint.sh
+
+# Set environment variables
+ENV MODEL_DIR=/workspace/models
+ENV OUTPUT_DIR=/tmp/outputs
+ENV PYTHONPATH=/workspace/InfiniteTalk:$PYTHONPATH
+
+WORKDIR /workspace
+
+CMD ["/workspace/entrypoint.sh"]
