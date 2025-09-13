@@ -1,3 +1,5 @@
+# InfiniteTalk RunPod Handler v1.1 - Sep 2025
+# Fixed: model_loaded global variable
 import os
 import json
 import uuid
