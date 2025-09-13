@@ -37,7 +37,7 @@ RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
     ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # Upgrade pip (root is fine in Docker)
-RUN pip install --upgrade --root-user-action=ignore pip setuptools wheel
+RUN pip install --upgrade pip setuptools wheel
 
 # Install PyTorch with native CUDA 12.8 support (nightly build Sep 2025)
 RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
