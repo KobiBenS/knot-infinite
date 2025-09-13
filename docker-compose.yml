@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  infinitetalk:
+    build: .
+    image: infinitetalk-runpod:latest
+    container_name: infinitetalk-serverless
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_HOME=/runpod-volume/huggingface
+      - TORCH_HOME=/runpod-volume/torch
+      - MODEL_DIR=/runpod-volume/models
+      - BUCKET_ENDPOINT_URL=${BUCKET_ENDPOINT_URL:-}
+      - BUCKET_ACCESS_KEY_ID=${BUCKET_ACCESS_KEY_ID:-}
+      - BUCKET_SECRET_ACCESS_KEY=${BUCKET_SECRET_ACCESS_KEY:-}
+      - BUCKET_NAME=${BUCKET_NAME:-infinitetalk-outputs}
+      - RUNPOD_WEBHOOK_URL=${RUNPOD_WEBHOOK_URL:-}
+    volumes:
+      - infinitetalk-volume:/runpod-volume
+      - ./outputs:/workspace/outputs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  infinitetalk-volume:
+    driver: local

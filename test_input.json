@@ -1,0 +1,13 @@
+{
+  "input": {
+    "action": "generate",
+    "audio_url": "https://example.com/sample_audio.wav",
+    "image_url": "https://example.com/sample_image.jpg",
+    "size": "infinitetalk-480",
+    "frame_num": 81,
+    "max_frame_num": 200,
+    "sample_steps": 40,
+    "cfg_scale": 1.1,
+    "seed": 42
+  }
+}

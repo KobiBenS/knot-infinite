@@ -1,0 +1,33 @@
+# RunPod Project Configuration for InfiniteTalk
+
+title = "InfiniteTalk Serverless"
+
+[project]
+uuid = "infinitetalk-serverless"
+name = "InfiniteTalk Serverless"
+base_image = "runpod/pytorch:2.1.0-py3.10-cuda12.1.0-devel-ubuntu22.04"
+gpu_types = ["H100 PCIe", "H100 SXM", "H100 NVL"]
+gpu_count = 2
+storage_id = "auto"
+volume_mount_path = "/runpod-volume"
+ports = "8080/http"
+container_disk_size_gb = 50
+
+[project.env_vars]
+PYTHONUNBUFFERED = "1"
+HF_HOME = "/runpod-volume/huggingface"
+TORCH_HOME = "/runpod-volume/torch"
+MODEL_DIR = "/runpod-volume/models"
+BUCKET_ENDPOINT_URL = ""
+BUCKET_ACCESS_KEY_ID = ""
+BUCKET_SECRET_ACCESS_KEY = ""
+BUCKET_NAME = "infinitetalk-outputs"
+
+[template]
+model_type = "custom"
+model_name = "InfiniteTalk"
+
+[runtime]
+python_version = "3.10"
+handler_path = "runpod_handler.py"
+requirements_path = "requirements_runpod.txt"
