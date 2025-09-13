@@ -1,5 +1,8 @@
-# Use specific version of nvidia cuda image
-FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04 as runtime
+# InfiniteTalk RunPod v2.0 - Force rebuild Sep 2025
+FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04
+
+# Cache bust to force rebuild
+ARG CACHEBUST=v2.0
 
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
@@ -75,9 +78,9 @@ RUN git lfs install && \
 # Note: WAN model needs to be downloaded separately due to size
 # Add download command here when you have the model URL
 
-# Copy handler and entrypoint
-COPY runpod_handler.py /workspace/
-COPY entrypoint.sh /workspace/
+# Copy handler and entrypoint (v2.0 with fixes)
+COPY runpod_handler.py /workspace/runpod_handler.py
+COPY entrypoint.sh /workspace/entrypoint.sh
 
 RUN chmod +x /workspace/entrypoint.sh
 
