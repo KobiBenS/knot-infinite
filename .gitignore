@@ -1,0 +1,36 @@
+# Environment files
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+env/
+ENV/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Outputs
+outputs/
+*.mp4
+*.wav
+*.jpg
+*.png
+
+# Models (if downloaded locally)
+models/
+*.pt
+*.bin
+*.safetensors
