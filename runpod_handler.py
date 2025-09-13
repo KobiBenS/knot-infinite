@@ -113,10 +113,11 @@ def generate_video(job_input: Dict[str, Any]) -> Dict[str, Any]:
 
         output_path = f"{OUTPUT_STORAGE_PATH}/{job_id}.mp4"
 
+        # Default parameters optimized for speed
         size = job_input.get("size", "infinitetalk-480")
         frame_num = job_input.get("frame_num", 81)
         max_frame_num = job_input.get("max_frame_num", 1000)
-        sample_steps = job_input.get("sample_steps", 40)
+        sample_steps = job_input.get("sample_steps", 8)  # 8 steps for 5x faster generation
         sample_shift = job_input.get("sample_shift", 7 if size == "infinitetalk-480" else 11)
         cfg_scale = job_input.get("cfg_scale", 1.1)
         seed = job_input.get("seed", -1)
