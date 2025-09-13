@@ -59,16 +59,34 @@ RUN pip install xformers==0.0.28.post3 --index-url https://download.pytorch.org/
 # Install ParaAttention
 RUN pip install git+https://github.com/chengzeyi/ParaAttention.git
 
+# Download models during build for fast cold start
+RUN mkdir -p /workspace/models/wan && \
+    mkdir -p /workspace/models/infinitetalk && \
+    mkdir -p /workspace/models/wav2vec2
+
+# Install git-lfs for model downloads
+RUN apt-get update && apt-get install -y git-lfs && rm -rf /var/lib/apt/lists/*
+
+# Download Wav2Vec2 model (small, ~400MB)
+RUN git lfs install && \
+    git clone https://huggingface.co/facebook/wav2vec2-base /workspace/models/wav2vec2/wav2vec2-base || \
+    echo "Warning: Wav2Vec2 download failed, will retry at runtime"
+
+# Note: WAN model needs to be downloaded separately due to size
+# Add download command here when you have the model URL
+
 # Copy handler and entrypoint
 COPY runpod_handler.py /workspace/
 COPY entrypoint.sh /workspace/
 
 RUN chmod +x /workspace/entrypoint.sh
 
-# Set environment variables
-ENV HF_HOME=/runpod-volume/huggingface
-ENV TORCH_HOME=/runpod-volume/torch
-ENV MODEL_DIR=/runpod-volume/models
+# Set environment variables - models in image, outputs to volume/tmp
+ENV HF_HOME=/workspace/.cache/huggingface
+ENV TORCH_HOME=/workspace/.cache/torch
+ENV MODEL_DIR=/workspace/models
+ENV OUTPUT_DIR=/tmp/outputs
+ENV PYTHONPATH=/workspace/InfiniteTalk:$PYTHONPATH
 
 WORKDIR /workspace
 
