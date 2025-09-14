@@ -1,8 +1,8 @@
 # InfiniteTalk RunPod v2.0 - Force rebuild Sep 2025
 FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04
 
-# Cache bust to force rebuild
-ARG CACHEBUST=v2.0
+# Cache bust to force rebuild - update this to force new build
+ARG CACHEBUST=v2.1-stable
 
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
@@ -57,8 +57,10 @@ RUN git clone https://github.com/MeiGen-AI/InfiniteTalk.git /workspace/InfiniteT
 WORKDIR /workspace/InfiniteTalk
 RUN pip install -r requirements.txt
 
-# Install xformers for CUDA 12.x (compatible with CUDA 12.8)
-RUN pip install xformers==0.0.28.post3 --index-url https://download.pytorch.org/whl/cu124
+# Install xformers compatible with torch 2.5.1 and CUDA 12.4
+# Using specific version to ensure compatibility
+RUN pip install xformers==0.0.28.post2 --no-deps && \
+    pip install pyre-extensions
 
 # Install ParaAttention
 RUN pip install git+https://github.com/chengzeyi/ParaAttention.git
