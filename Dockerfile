@@ -42,8 +42,9 @@ RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
 # Upgrade pip (root is fine in Docker)
 RUN pip install --upgrade pip setuptools wheel
 
-# Install PyTorch with native CUDA 12.8 support (nightly build Sep 2025)
-RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+# Install PyTorch - stable version with CUDA 12.4 (compatible with CUDA 12.8)
+# Using stable to avoid torchvision compatibility issues
+RUN pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 
 # Copy and install RunPod requirements
 COPY requirements_runpod.txt .
