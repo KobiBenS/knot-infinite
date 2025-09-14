@@ -2,6 +2,23 @@
 
 echo "Starting InfiniteTalk RunPod Handler..."
 
+# Check for critical dependencies
+echo "Checking dependencies..."
+python -c "import misaki; print('✓ misaki module found')" || {
+    echo "ERROR: misaki module not found! Installing..."
+    pip install misaki "misaki[en]"
+}
+
+python -c "import librosa; print('✓ librosa module found')" || {
+    echo "ERROR: librosa module not found! Installing..."
+    pip install librosa
+}
+
+python -c "import torch; print(f'✓ PyTorch {torch.__version__} found')" || {
+    echo "ERROR: PyTorch not found!"
+    exit 1
+}
+
 # No volume needed - using /tmp for temporary outputs
 mkdir -p /tmp/outputs
 mkdir -p /tmp/jobs
